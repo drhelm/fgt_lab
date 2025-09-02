@@ -12,8 +12,8 @@ scrape_configs:
   - job_name: 'snmp_fgt'
     metrics_path: /snmp
     params:
-      module: ['if_mib']            # назва модуля з snmp_exporter/snmp.yml
-      auth:   ['fgt_v2_public_lab'] # назва auth з snmp_exporter/snmp.yml
+      module: ['if_mib']
+      auth:   ['fgt_v2_public_lab']
     static_configs:
       - targets: ['10.0.0.234']     # IP FortiGate
     relabel_configs:
@@ -22,4 +22,4 @@ scrape_configs:
       - source_labels: [__param_target]
         target_label: instance
       - target_label: __address__
-        replacement: snmp_exporter:9116  # ім'я сервісу в docker compose мережі
+        replacement: snmp_exporter:9116
