@@ -1,0 +1,202 @@
+---
+- name: FortiGate test lab – base config
+  hosts: fortigates
+  gather_facts: no
+  collections:
+    - fortinet.fortios
+
+  vars:
+    vdom: "{{ fortigate_vdom | default('root') }}"
+
+  tasks:
+    ###########################################################################
+    # 1) Інтерфейси та маршрут (ОПЦІЙНО)
+    ###########################################################################
+    - name: Configure WAN interface (optional)
+      fortinet.fortios.fortios_system_interface:
+        access_token: "{{ fortigate_token | default(omit) }}"
+        vdom: "{{ vdom }}"
+        state: present
+        system_interface:
+          name: "{{ wan_if }}"
+          mode: static
+          ip: "{{ wan_ip }} {{ wan_mask }}"
+          allowaccess: "{{ wan_allowaccess | join(' ') }}"
+      when: configure_interfaces | default(false) | bool
+
+    - name: Configure LAN interface (optional)
+      fortinet.fortios.fortios_system_interface:
+        access_token: "{{ fortigate_token | default(omit) }}"
+        vdom: "{{ vdom }}"
+        state: present
+        system_interface:
+          name: "{{ lan_if }}"
+          mode: static
+          ip: "{{ lan_ip }} {{ lan_mask }}"
+          allowaccess: "{{ lan_allowaccess | join(' ') }}"
+      when: configure_interfaces | default(false) | bool
+
+    - name: Ensure default route via WAN (optional)
+      fortinet.fortios.fortios_router_static:
+        access_token: "{{ fortigate_token | default(omit) }}"
+        vdom: "{{ vdom }}"
+        state: present
+        router_static:
+          seq_num: 1
+          dst: 0.0.0.0/0
+          gateway: "{{ wan_gw }}"
+          device: "{{ wan_if }}"
+      when: configure_interfaces | default(false) | bool
+
+    ###########################################################################
+    # 2) Адресні об'єкти і група
+    ###########################################################################
+    - name: Create network objects
+      fortinet.fortios.fortios_firewall_address:
+        access_token: "{{ fortigate_token | default(omit) }}"
+        vdom: "{{ vdom }}"
+        state: present
+        firewall_address:
+          name: "{{ item.name }}"
+          subnet: "{{ item.subnet }}"
+      loop: "{{ networks | default([]) }}"
+
+    - name: Create host objects (/32)
+      fortinet.fortios.fortios_firewall_address:
+        access_token: "{{ fortigate_token | default(omit) }}"
+        vdom: "{{ vdom }}"
+        state: present
+        firewall_address:
+          name: "{{ item.name }}"
+          subnet: "{{ item.ip }}"
+      loop: "{{ hosts | default([]) }}"
+
+    - name: Create FQDN objects
+      fortinet.fortios.fortios_firewall_address:
+        access_token: "{{ fortigate_token | default(omit) }}"
+        vdom: "{{ vdom }}"
+        state: present
+        firewall_address:
+          name: "{{ item.name }}"
+          type: fqdn
+          fqdn: "{{ item.fqdn }}"
+      loop: "{{ fqdns | default([]) }}"
+
+    - name: Create address group with local nets
+      fortinet.fortios.fortios_firewall_addrgrp:
+        access_token: "{{ fortigate_token | default(omit) }}"
+        vdom: "{{ vdom }}"
+        state: present
+        firewall_addrgrp:
+          name: "{{ addrgrp_local_nets }}"
+          member: "{{ networks | map(attribute='name') | map('regex_replace', '^(.*)$', '{\"name\": \"\\1\"}') | list }}"
+
+    ###########################################################################
+    # 3) Політики
+    ###########################################################################
+    # 3a) (Опційно) широке правило LAN→Internet — вимикається/вмикається прапорцем
+    - name: Ensure LAN->WAN policy exists
+      fortinet.fortios.fortios_firewall_policy:
+        access_token: "{{ fortigate_token | default(omit) }}"
+        vdom: "{{ vdom }}"
+        state: present
+        firewall_policy:
+          name: "LAN-to-Internet"
+          srcintf: "{{ policy_srcintf | map('regex_replace', '^(.*)$', '{\"name\": \"\\1\"}') | list }}"
+          dstintf: "{{ policy_dstintf | map('regex_replace', '^(.*)$', '{\"name\": \"\\1\"}') | list }}"
+          srcaddr: "{{ policy_srcaddr  | map('regex_replace', '^(.*)$', '{\"name\": \"\\1\"}') | list }}"
+          dstaddr: "{{ policy_dstaddr  | map('regex_replace', '^(.*)$', '{\"name\": \"\\1\"}') | list }}"
+          service: "{{ policy_services | map('regex_replace', '^(.*)$', '{\"name\": \"\\1\"}') | list }}"
+          action: accept
+          schedule: always
+          nat: "{{ (policy_nat | default(true)) | ternary('enable','disable') }}"
+          status: "{{ policy_status | default('enable') }}"
+          logtraffic: all
+      when: create_general_policy | default(false) | bool
+
+    # 3b) Точкові правила 1 хост → 1 FQDN (web-сервіси) через сирий REST, ідемпотентно
+    - name: Read current policies list (once)
+      ansible.builtin.uri:
+        url: "https://{{ fortigate_host }}/api/v2/cmdb/firewall/policy?vdom={{ vdom }}&access_token={{ fortigate_token }}"
+        method: GET
+        return_content: true
+        validate_certs: false
+      register: policies_list
+
+    - name: Create/Update per-host → FQDN policy
+      ansible.builtin.uri:
+        url: >-
+          https://{{ fortigate_host }}/api/v2/cmdb/firewall/policy{{ (existing_id | int > 0) | ternary('/' ~ (existing_id | int), '') }}?vdom={{ vdom }}&access_token={{ fortigate_token }}
+        method: "{{ (existing_id | int > 0) | ternary('PUT', 'POST') }}"
+        validate_certs: false
+        body_format: json
+        status_code: [200]
+        body:
+          name: "ALLOW {{ item.src }} TO {{ item.dst }}"
+          srcintf: [ { "name": "any" } ]
+          dstintf: [ { "name": "any" } ]
+          srcaddr: [ { "name": "{{ item.src }}" } ]
+          dstaddr: [ { "name": "{{ item.dst }}" } ]
+          service: "{{ (pair_policy_services | default(['HTTP','HTTPS']))
+                       | map('regex_replace', '^(.*)$', '{\"name\": \"\\1\"}')
+                       | map('from_json')
+                       | list }}"
+          action: "accept"
+          schedule: "always"
+          nat: "{{ (policy_nat | default(true)) | ternary('enable','disable') }}"
+          status: "enable"
+          logtraffic: "all"
+      loop: "{{ host_fqdn_pairs }}"
+      loop_control:
+        label: "{{ item.src }} → {{ item.dst }}"
+      vars:
+        # перетворюємо знайдений policyid у ціле число; якщо не знайдено — 0
+        existing_id: >-
+          {{ (policies_list.json.results
+              | selectattr('name','equalto', 'ALLOW ' ~ item.src ~ ' TO ' ~ item.dst)
+              | map(attribute='policyid')
+              | list
+              | first
+              | default(0)) | int }}
+
+
+    ###########################################################################
+    # 4) SNMP
+    ###########################################################################
+    - name: Enable SNMP agent & sysinfo
+      fortinet.fortios.fortios_system_snmp_sysinfo:
+        access_token: "{{ fortigate_token | default(omit) }}"
+        vdom: "{{ vdom }}"
+        system_snmp_sysinfo:
+          status: enable
+          contact_info: "{{ snmp_contact }}"
+          location: "{{ snmp_location }}"
+
+    - name: Configure SNMP community + ACL
+      fortinet.fortios.fortios_system_snmp_community:
+        access_token: "{{ fortigate_token | default(omit) }}"
+        vdom: "{{ vdom }}"
+        state: present
+        system_snmp_community:
+          id: 1                       # ID самої community (обов'язково)
+          name: "{{ snmp_community }}"
+          status: enable
+          query_v2c_status: enable
+          hosts: "{{ snmp_hosts }}"
+
+    - name: Enable SNMP on interfaces (via allowaccess)
+      fortinet.fortios.fortios_system_interface:
+        access_token: "{{ fortigate_token | default(omit) }}"
+        vdom: "{{ vdom }}"
+        state: present
+        system_interface:
+          name: "{{ item }}"
+          vdom: "{{ vdom }}"
+          allowaccess: >-
+            {{
+              (
+                (item == lan_if)
+                | ternary(lan_allowaccess + ['snmp'], wan_allowaccess + ['snmp'])
+              ) | unique
+            }}
+      loop: "{{ snmp_ifaces }}"

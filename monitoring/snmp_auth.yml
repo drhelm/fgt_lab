@@ -1,0 +1,4 @@
+auths:
+  fgt_v2_public:
+    version: 2
+    community: public-lab

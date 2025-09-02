@@ -1,0 +1,98 @@
+{
+  "uid": "fortigate-snmp",
+  "title": "FortiGate SNMP — Interfaces",
+  "tags": ["fortigate","snmp","network"],
+  "schemaVersion": 39,
+  "version": 1,
+  "refresh": "30s",
+  "time": { "from": "now-6h", "to": "now" },
+  "templating": {
+    "list": [
+      {
+        "type": "query",
+        "name": "instance",
+        "label": "Instance",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(ifAdminStatus, instance)",
+        "refresh": 2
+      },
+      {
+        "type": "query",
+        "name": "ifIndex",
+        "label": "Interface Index",
+        "datasource": { "type": "prometheus", "uid": "prometheus" },
+        "query": "label_values(ifAdminStatus{instance=\"$instance\"}, ifIndex)",
+        "refresh": 2
+      }
+    ]
+  },
+  "panels": [
+    {
+      "type": "timeseries",
+      "title": "RX/TX bps (ifIndex=$ifIndex)",
+      "gridPos": { "h": 9, "w": 12, "x": 0, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "clamp_min(8 * rate(ifHCInOctets{instance=\"$instance\",ifIndex=\"$ifIndex\"}[5m]), 0)", "legendFormat": "RX" },
+        { "expr": "clamp_min(8 * rate(ifHCOutOctets{instance=\"$instance\",ifIndex=\"$ifIndex\"}[5m]), 0)", "legendFormat": "TX" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Errors/s (ifIndex=$ifIndex)",
+      "gridPos": { "h": 9, "w": 12, "x": 12, "y": 0 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "rate(ifInErrors{instance=\"$instance\",ifIndex=\"$ifIndex\"}[5m])", "legendFormat": "InErrors/s" },
+        { "expr": "rate(ifOutErrors{instance=\"$instance\",ifIndex=\"$ifIndex\"}[5m])", "legendFormat": "OutErrors/s" }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Discards/s (ifIndex=$ifIndex)",
+      "gridPos": { "h": 8, "w": 12, "x": 0, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "rate(ifInDiscards{instance=\"$instance\",ifIndex=\"$ifIndex\"}[5m])", "legendFormat": "InDiscards/s" },
+        { "expr": "rate(ifOutDiscards{instance=\"$instance\",ifIndex=\"$ifIndex\"}[5m])", "legendFormat": "OutDiscards/s" }
+      ]
+    },
+    {
+      "type": "stat",
+      "title": "Oper status (1=UP,2=DOWN)",
+      "gridPos": { "h": 8, "w": 6, "x": 12, "y": 9 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "max by (ifIndex) (ifOperStatus{instance=\"$instance\",ifIndex=\"$ifIndex\"})", "instant": true }
+      ]
+    },
+    {
+      "type": "table",
+      "title": "Interface info (all ifIndex)",
+      "gridPos": { "h": 10, "w": 24, "x": 0, "y": 17 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "options": { "showHeader": true },
+      "targets": [
+        { "expr": "ifHighSpeed{instance=\"$instance\"}", "legendFormat": "{{ifIndex}} highSpeed(Mbps)", "instant": true },
+        { "expr": "ifSpeed{instance=\"$instance\"}", "legendFormat": "{{ifIndex}} speed(bps)", "instant": true },
+        { "expr": "ifMtu{instance=\"$instance\"}", "legendFormat": "{{ifIndex}} mtu", "instant": true },
+        { "expr": "ifType{instance=\"$instance\"}", "legendFormat": "{{ifIndex}} type", "instant": true },
+        { "expr": "ifOperStatus{instance=\"$instance\"}", "legendFormat": "{{ifIndex}} oper", "instant": true },
+        { "expr": "ifAdminStatus{instance=\"$instance\"}", "legendFormat": "{{ifIndex}} admin", "instant": true }
+      ],
+      "transformations": [
+        { "id": "labelsToFields", "options": { "mode": "columns" } }
+      ]
+    },
+    {
+      "type": "timeseries",
+      "title": "Top-5 RX bps (by ifIndex)",
+      "gridPos": { "h": 8, "w": 24, "x": 0, "y": 27 },
+      "datasource": { "type": "prometheus", "uid": "prometheus" },
+      "targets": [
+        { "expr": "topk(5, clamp_min(8 * rate(ifHCInOctets{instance=\"$instance\"}[5m]), 0))", "legendFormat": "ifIndex={{ifIndex}}" }
+      ]
+    }
+  ],
+  "annotations": { "list": [] }
+}

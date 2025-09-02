@@ -1,0 +1,68 @@
+# === базове підключення до FGT ===
+fortigate_host: 10.0.0.234
+fortigate_vdom: root
+fortigate_https: true
+fortigate_ssl_verify: false
+fortigate_timeout: 60
+fortigate_token: "{{ lookup('env', 'FGT_API_TOKEN') }}"
+
+
+configure_interfaces: false
+
+wan_if: "port1"
+lan_if: "port1"
+
+
+wan_ip: 10.0.0.234
+wan_mask: 255.255.255.0
+wan_gw: 10.0.0.1
+
+lan_ip: 10.0.1.1
+lan_mask: 255.255.255.0
+
+wan_allowaccess: [https, ping]
+lan_allowaccess: [https, ping, ssh]
+
+networks:
+  - { name: NET_10_0_1_0_24, subnet: "10.0.1.0/24" }
+  - { name: NET_10_0_2_0_24, subnet: "10.0.2.0/24" }
+  - { name: NET_10_0_3_0_24, subnet: "10.0.3.0/24" }
+
+
+hosts:
+  - { name: HOST_10_0_3_14, ip: "10.0.3.14/32" }
+  - { name: HOST_10_0_2_2,  ip: "10.0.2.2/32"  }
+  - { name: HOST_10_0_1_44, ip: "10.0.1.44/32" }
+
+fqdns:
+  - { name: FQDN_I_UA,         fqdn: "i.ua" }
+  - { name: FQDN_BIGL_COM,      fqdn: "bigl.com" }
+  - { name: FQDN_COMFY_COM,     fqdn: "comfy.com" }
+
+
+host_fqdn_pairs:
+  - { src: HOST_10_0_3_14, dst: FQDN_I_UA }
+  - { src: HOST_10_0_2_2,  dst: FQDN_BIGL_COM }
+  - { src: HOST_10_0_1_44, dst: FQDN_COMFY_COM }
+
+pair_policy_services: ["HTTP", "HTTPS"]
+
+
+addrgrp_local_nets: "LOCAL_NETS"
+
+policy_srcintf: ["{{ lan_if }}"]
+policy_dstintf: ["{{ wan_if }}"]
+policy_srcaddr: ["{{ addrgrp_local_nets }}"]
+policy_dstaddr: ["all"]
+policy_services: ["ALL"]
+policy_nat: true
+policy_status: enable
+
+
+snmp_status: enable
+snmp_contact: "noc@malburlin.space"
+snmp_location: "Lab Rack"
+snmp_community: "public-lab"
+snmp_hosts:
+  - { id: 1, ip: "10.0.0.232 255.255.255.0" }
+snmp_ifaces: ["port1"]

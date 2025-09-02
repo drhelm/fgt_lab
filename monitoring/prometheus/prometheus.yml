@@ -1,0 +1,25 @@
+global:
+  scrape_interval: 30s
+  evaluation_interval: 30s
+
+scrape_configs:
+  # сам Prometheus
+  - job_name: 'prometheus'
+    static_configs:
+      - targets: ['localhost:9090']
+
+  # FortiGate через snmp_exporter
+  - job_name: 'snmp_fgt'
+    metrics_path: /snmp
+    params:
+      module: ['if_mib']            # назва модуля з snmp_exporter/snmp.yml
+      auth:   ['fgt_v2_public_lab'] # назва auth з snmp_exporter/snmp.yml
+    static_configs:
+      - targets: ['10.0.0.234']     # IP FortiGate
+    relabel_configs:
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: snmp_exporter:9116  # ім'я сервісу в docker compose мережі
