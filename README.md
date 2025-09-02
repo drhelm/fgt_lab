@@ -63,12 +63,15 @@ execute api-user generate-key ansible   # надрукує токен
 ```
 FGT_API_TOKEN=ВАШ ТОКЕН з п.1
 ```
-## 4) В файлі inventory.ini
+## 4.1) В файлі inventory.ini
 Змінюємо в рядку IP на IP адресу свого Fortigate
 ```
 [fortigates]
 fgt01 ansible_host=<IP> vdom=root
 ```
+## 4.2) Зміни в файлі monitoring/prometheus/prometheus.yml
+static_configs:
+      - targets: ['<IP>']     # Сюди також підставляємо IP FortiGate
 ## 5) Запускаємо наш плейбук Ansible 
 ```
 cd ansible
